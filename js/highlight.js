@@ -38,13 +38,14 @@ const Highlight = (() => {
     return wrapClass ? `<span class="${wrapClass}">${inner}</span>` : inner;
   }
 
-  // Full re-render of the editor
+  // Re-entrancy guard: setting innerHTML inside apply() fires the 'input'
+  // event synchronously, which would call apply() again before we finish.
+  // The outer call owns the caret snapshot — the inner call must be ignored.
   let _applying = false;
+
+  // Full re-render of the editor
   function apply(editorEl) {
     if (State.isComposing) return;
-    // Re-entrancy guard: setting textContent/innerHTML inside apply() triggers
-    // the 'input' event which would call apply() again before we've finished.
-    // The outer call owns the caret snapshot; ignore the inner call entirely.
     if (_applying) return;
     _applying = true;
 
@@ -69,14 +70,23 @@ const Highlight = (() => {
       ? Folding.getHiddenLines(lines)
       : new Set();
 
-    // Build editor HTML, inserting fold-placeholder for collapsed blocks
+    // Build editor HTML
     const htmlParts = [];
-    let skipUntil = -1;
     lines.forEach((l, i) => {
-      if (hiddenLines.has(i)) return; // hidden inside a fold
+      if (hiddenLines.has(i)) return;
       htmlParts.push(line(l, i));
     });
-    editorEl.innerHTML = htmlParts.join('<br>');
+
+    // Join lines with <br>. A single trailing <br> is treated as a "ghost"
+    // by browsers (visually invisible, cursor can't land there). Add an
+    // extra <br> whenever the content ends with a newline so the final
+    // empty line is real and the cursor can sit on it.
+    let finalHtml = htmlParts.join('<br>');
+    if (plain.endsWith('\n') || plain === '') {
+      finalHtml += '<br>';
+    }
+    editorEl.innerHTML = finalHtml;
+
     // Only restore caret if the editor currently has focus —
     // otherwise setOffset steals focus away from e.g. the filename input.
     if (document.activeElement === editorEl) {
