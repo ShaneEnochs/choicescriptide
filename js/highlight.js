@@ -39,8 +39,14 @@ const Highlight = (() => {
   }
 
   // Full re-render of the editor
+  let _applying = false;
   function apply(editorEl) {
     if (State.isComposing) return;
+    // Re-entrancy guard: setting textContent/innerHTML inside apply() triggers
+    // the 'input' event which would call apply() again before we've finished.
+    // The outer call owns the caret snapshot; ignore the inner call entirely.
+    if (_applying) return;
+    _applying = true;
 
     const caret = Caret.getOffset(editorEl);
     const plain = Editor.getPlainText(editorEl);
@@ -92,6 +98,8 @@ const Highlight = (() => {
 
     // Re-apply search highlights if panel is open
     Search.reapplyIfOpen();
+
+    _applying = false;
   }
 
   return { apply, esc, line };
