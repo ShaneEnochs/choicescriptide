@@ -71,7 +71,11 @@ const Highlight = (() => {
       htmlParts.push(line(l, i));
     });
     editorEl.innerHTML = htmlParts.join('<br>');
-    Caret.setOffset(editorEl, caret.start, caret.end);
+    // Only restore caret if the editor currently has focus —
+    // otherwise setOffset steals focus away from e.g. the filename input.
+    if (document.activeElement === editorEl) {
+      Caret.setOffset(editorEl, caret.start, caret.end);
+    }
 
     // Update fold gutter (replaces LineNumbers.update)
     if (typeof Folding !== 'undefined') {
