@@ -77,15 +77,11 @@ const Highlight = (() => {
       htmlParts.push(line(l, i));
     });
 
-    // Join lines with <br>. A single trailing <br> is treated as a "ghost"
-    // by browsers (visually invisible, cursor can't land there). Add an
-    // extra <br> whenever the content ends with a newline so the final
-    // empty line is real and the cursor can sit on it.
-    let finalHtml = htmlParts.join('<br>');
-    if (plain.endsWith('\n') || plain === '') {
-      finalHtml += '<br>';
-    }
-    editorEl.innerHTML = finalHtml;
+    // Join lines with <br>. Do NOT add a trailing <br> here — any extra BR
+    // gets read back by getPlainText as a real \n, causing content to grow
+    // by one newline on every refresh. The CSS ::after pseudo-element on
+    // #editor provides the visual open line at the end without touching the DOM.
+    editorEl.innerHTML = htmlParts.join('<br>');
 
     // Only restore caret if the editor currently has focus —
     // otherwise setOffset steals focus away from e.g. the filename input.
