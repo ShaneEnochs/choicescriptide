@@ -77,11 +77,12 @@ const Highlight = (() => {
       htmlParts.push(line(l, i));
     });
 
-    // Join lines with <br>. Do NOT add a trailing <br> here — any extra BR
-    // gets read back by getPlainText as a real \n, causing content to grow
-    // by one newline on every refresh. The CSS ::after pseudo-element on
-    // #editor provides the visual open line at the end without touching the DOM.
-    editorEl.innerHTML = htmlParts.join('<br>');
+    // Join lines with <br>. Then append a sentinel <br data-sentinel> so the
+    // browser renders a visible cursor position after the last BR. This BR is
+    // marked with data-sentinel so getPlainText knows to skip it — without the
+    // marker, getPlainText would count it as a real \n and content would grow
+    // by one newline on every refresh.
+    editorEl.innerHTML = htmlParts.join('<br>') + '<br data-sentinel>';
 
     // Only restore caret if the editor currently has focus —
     // otherwise setOffset steals focus away from e.g. the filename input.
