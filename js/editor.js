@@ -5,13 +5,16 @@
 const Editor = (() => {
 
   // ── Plain text extraction ─────────────────────────────────────────────
+  // highlight.js appends a <br data-sentinel> after every render so the browser
+  // shows a cursor on the final empty line. We skip it here so it never gets
+  // counted as a real \n and saved to localStorage.
   function getPlainText(el) {
     let text = '';
     function walk(node) {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.nodeName === 'BR') {
-        text += '\n';
+        if (!node.hasAttribute('data-sentinel')) text += '\n';
       } else {
         for (const child of node.childNodes) walk(child);
         if (['DIV', 'P'].includes(node.nodeName) && node !== el) text += '\n';
