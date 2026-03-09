@@ -2,12 +2,20 @@
 // Needed because re-rendering innerHTML resets the cursor to position 0.
 //
 // Uses a unified tree-walker so getOffset and setOffset count identically.
-// Each <br> counts as 1 character (the '\n' it represents).
+// Each <br> counts as 1 character (the '\n' it represents), EXCEPT for
+// <br data-sentinel> which is a visual-only node appended by highlight.js
+// to ensure the cursor can land on the final empty line. The sentinel is
+// invisible to all character counting.
 
 const Caret = (() => {
 
-  // Count all plain-text characters in a subtree.
+  function isSentinel(node) {
+    return node.nodeName === 'BR' && node.hasAttribute && node.hasAttribute('data-sentinel');
+  }
+
+  // Count all plain-text characters in a subtree, skipping the sentinel BR.
   function countAll(node) {
+    if (isSentinel(node)) return 0;
     if (node.nodeType === Node.TEXT_NODE) return node.textContent.length;
     if (node.nodeName === 'BR') return 1;
     let n = 0;
@@ -16,12 +24,6 @@ const Caret = (() => {
   }
 
   // ── getOffset ─────────────────────────────────────────────────────────
-  // Unified walker: if we reach the exact container node, add the local
-  // offset and stop. Otherwise count the node's characters and keep going.
-  // Handles all three browser cursor placement cases:
-  //   (a) Text node container  → offset is chars into that node
-  //   (b) Element container    → offset is child index; sum first N children
-  //   (c) BR container         → treat as 0 (cursor is on the BR itself)
   function getOffset(el) {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return { start: 0, end: 0 };
@@ -33,14 +35,12 @@ const Caret = (() => {
 
       function walk(node) {
         if (found) return;
+        if (isSentinel(node)) return; // skip sentinel entirely
 
         if (node === container) {
           if (node.nodeType === Node.TEXT_NODE) {
-            // Offset is a character index within this text node.
             count += offset;
           } else {
-            // Element or BR: offset is a child index.
-            // Sum the first `offset` children.
             for (let i = 0; i < offset; i++) {
               if (node.childNodes[i]) count += countAll(node.childNodes[i]);
             }
@@ -71,16 +71,14 @@ const Caret = (() => {
   }
 
   // ── setOffset ─────────────────────────────────────────────────────────
-  // Walk the editor DOM counting plain-text characters, find the node and
-  // local offset corresponding to the target character index.
+  // Walk the editor DOM counting plain-text characters (skipping the sentinel),
+  // find the node and local offset for the target character index.
   //
-  // BR handling has two cases:
-  //   target === cc     → cursor AT the newline: anchor before this BR
-  //   target === cc + 1 → cursor at START of next line: anchor to next sibling
-  //
-  // The "next sibling" strategy for cc+1 is critical: using parent+childIndex+1
-  // causes browsers to silently collapse the range forward when two BRs are
-  // adjacent (empty lines). Anchoring to the next node directly prevents this.
+  // BR handling:
+  //   target === cc     → place before the BR (at the newline character itself)
+  //   target === cc + 1 → place at the start of the next line
+  //     - If next sibling exists: anchor to it directly (avoids adjacent-BR collapse)
+  //     - If no next sibling (or only the sentinel): anchor to parent end
   function setOffset(el, start, end) {
     const sel = window.getSelection();
     if (!sel) return;
@@ -91,6 +89,7 @@ const Caret = (() => {
 
       function walk(node) {
         if (result) return;
+        if (isSentinel(node)) return; // skip sentinel
 
         if (node.nodeType === Node.TEXT_NODE) {
           const len = node.textContent.length;
@@ -101,23 +100,26 @@ const Caret = (() => {
 
         } else if (node.nodeName === 'BR') {
           if (target === cc) {
-            // Cursor AT the newline — place before this BR.
             const idx = Array.from(node.parentNode.childNodes).indexOf(node);
             result = { node: node.parentNode, offset: idx };
           } else if (target === cc + 1) {
-            // Cursor at start of the line AFTER this BR.
-            // Must use next sibling directly to avoid browser collapsing the
-            // range when two consecutive BRs are present (empty lines).
-            const next = node.nextSibling;
+            // Find next non-sentinel sibling
+            let next = node.nextSibling;
+            while (next && isSentinel(next)) next = next.nextSibling;
+
             if (!next) {
-              // BR is last child — end of document.
-              const idx = Array.from(node.parentNode.childNodes).indexOf(node) + 1;
-              result = { node: node.parentNode, offset: idx };
+              // No real content after this BR — cursor at end of editor
+              // (before the sentinel, if any)
+              const sentinel = node.nextSibling; // may be sentinel or null
+              if (sentinel && isSentinel(sentinel)) {
+                const idx = Array.from(node.parentNode.childNodes).indexOf(sentinel);
+                result = { node: node.parentNode, offset: idx };
+              } else {
+                result = { node: node.parentNode, offset: node.parentNode.childNodes.length };
+              }
             } else if (next.nodeType === Node.TEXT_NODE) {
               result = { node: next, offset: 0 };
             } else {
-              // Next sibling is an element (another BR, span, etc.).
-              // Point to parent at indexOf(next) — equivalent to setStartBefore(next).
               const idx = Array.from(node.parentNode.childNodes).indexOf(next);
               result = { node: node.parentNode, offset: idx };
             }
