@@ -56,45 +56,65 @@ const Caret = (() => {
 
     let cc = 0, sn = null, so = 0, en = null, eo = 0;
 
-    function walk(node) {
-      if (sn && en) return;
-      if (node.nodeType === Node.TEXT_NODE) {
-        const len = node.textContent.length;
-        // Use <= so cursor can land at position 0 of this node when cc===start
-        if (!sn && start <= cc + len) { sn = node; so = start - cc; }
-        if (!en && end   <= cc + len) { en = node; eo = end   - cc; }
-        cc += len;
-      } else if (node.nodeName === 'BR') {
-        // A BR represents one newline at character position cc.
-        // If the target offset is exactly here, place the cursor in the
-        // parent element just after this BR (child index = BR's index + 1).
-        if (!sn && start === cc) {
-          const parent = node.parentNode;
-          const idx = Array.prototype.indexOf.call(parent.childNodes, node) + 1;
-          sn = parent; so = idx;
-        }
-        if (!en && end === cc) {
-          const parent = node.parentNode;
-          const idx = Array.prototype.indexOf.call(parent.childNodes, node) + 1;
-          en = parent; eo = idx;
-        }
-        cc += 1;
-      } else {
-        for (const child of node.childNodes) walk(child);
-      }
-    }
-    walk(el);
+    // Place a cursor endpoint at character position `target`.
+    // Returns { node, offset } for use with Range.setStart/setEnd.
+    // Handles the tricky case where the target falls right after a BR:
+    // browsers collapse parent+childIndex ranges when two BRs are adjacent,
+    // so we anchor to the *next sibling* directly instead.
+    function findPosition(target) {
+      let cc2 = 0;
+      let result = null;
 
-    if (!sn) { sn = el; so = el.childNodes.length; }
-    if (!en) { en = sn; eo = so; }
+      function walk(node) {
+        if (result) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const len = node.textContent.length;
+          if (target <= cc2 + len) {
+            result = { node, offset: target - cc2 };
+          }
+          cc2 += len;
+        } else if (node.nodeName === 'BR') {
+          // cc2 is the position OF the newline character.
+          // The position AFTER it (start of next line) is cc2 + 1.
+          if (target === cc2 + 1) {
+            // Anchor to whatever comes after this BR.
+            const next = node.nextSibling;
+            if (next && next.nodeType === Node.TEXT_NODE) {
+              // Next sibling is text: anchor at its start.
+              result = { node: next, offset: 0 };
+            } else if (next) {
+              // Next sibling is another element (e.g. another BR or span):
+              // use parent+childIndex pointing AT next, not after current.
+              const idx = Array.prototype.indexOf.call(node.parentNode.childNodes, next);
+              result = { node: node.parentNode, offset: idx };
+            } else {
+              // BR is the last child: parent + index after BR.
+              const idx = Array.prototype.indexOf.call(node.parentNode.childNodes, node) + 1;
+              result = { node: node.parentNode, offset: idx };
+            }
+          }
+          cc2 += 1;
+        } else {
+          for (const child of node.childNodes) walk(child);
+        }
+      }
+      walk(el);
+
+      // Fallback: end of document
+      if (!result) result = { node: el, offset: el.childNodes.length };
+      return result;
+    }
+
+    const s = findPosition(start);
+    const e = findPosition(end);
 
     try {
       const r = document.createRange();
-      r.setStart(sn, so);
-      r.setEnd(en, eo);
+      r.setStart(s.node, s.offset);
+      r.setEnd(e.node, e.offset);
       sel.removeAllRanges();
       sel.addRange(r);
-    } catch (e) { /* ignore edge cases at document boundaries */ }
+    } catch (ex) { /* ignore edge cases at document boundaries */ }
   }
 
   return { getOffset, setOffset };
