@@ -89,8 +89,8 @@ const Editor = (() => {
       const plain = getPlainText(editorEl);
       const newPos = caret.start + 4;
       editorEl.textContent = plain.slice(0, caret.start) + '    ' + plain.slice(caret.end);
-      Caret.setOffset(editorEl, newPos, newPos);
       Highlight.apply(editorEl);
+      Caret.setOffset(editorEl, newPos, newPos);
       return;
     }
 
