@@ -87,9 +87,10 @@ const Editor = (() => {
       e.preventDefault();
       const caret = Caret.getOffset(editorEl);
       const plain = getPlainText(editorEl);
+      const newPos = caret.start + 4;
       editorEl.textContent = plain.slice(0, caret.start) + '    ' + plain.slice(caret.end);
+      Caret.setOffset(editorEl, newPos, newPos);
       Highlight.apply(editorEl);
-      Caret.setOffset(editorEl, caret.start + 4, caret.start + 4);
       return;
     }
 
@@ -107,12 +108,11 @@ const Editor = (() => {
         /^\*(choice|fake_choice)\b/.test(trimmed)
       ) ? base + '    ' : base;
 
+      const newPos = caret.start + 1 + indent.length;
       editorEl.textContent =
         plain.slice(0, caret.start) + '\n' + indent + plain.slice(caret.end);
-
-      const newPos = caret.start + 1 + indent.length;
-      Highlight.apply(editorEl);
       Caret.setOffset(editorEl, newPos, newPos);
+      Highlight.apply(editorEl);
       return;
     }
   }
