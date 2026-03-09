@@ -60,11 +60,24 @@ const Caret = (() => {
       if (sn && en) return;
       if (node.nodeType === Node.TEXT_NODE) {
         const len = node.textContent.length;
-        if (!sn && cc + len >= start) { sn = node; so = start - cc; }
-        if (!en && cc + len >= end)   { en = node; eo = end   - cc; }
+        // Use <= so cursor can land at position 0 of this node when cc===start
+        if (!sn && start <= cc + len) { sn = node; so = start - cc; }
+        if (!en && end   <= cc + len) { en = node; eo = end   - cc; }
         cc += len;
       } else if (node.nodeName === 'BR') {
-        // BR nodes represent newline characters — count them as 1 character
+        // A BR represents one newline at character position cc.
+        // If the target offset is exactly here, place the cursor in the
+        // parent element just after this BR (child index = BR's index + 1).
+        if (!sn && start === cc) {
+          const parent = node.parentNode;
+          const idx = Array.prototype.indexOf.call(parent.childNodes, node) + 1;
+          sn = parent; so = idx;
+        }
+        if (!en && end === cc) {
+          const parent = node.parentNode;
+          const idx = Array.prototype.indexOf.call(parent.childNodes, node) + 1;
+          en = parent; eo = idx;
+        }
         cc += 1;
       } else {
         for (const child of node.childNodes) walk(child);
@@ -72,7 +85,7 @@ const Caret = (() => {
     }
     walk(el);
 
-    if (!sn) { sn = el; so = 0; }
+    if (!sn) { sn = el; so = el.childNodes.length; }
     if (!en) { en = sn; eo = so; }
 
     try {
