@@ -3,45 +3,71 @@
 
 const Caret = (() => {
 
+  // Count plain-text characters from the start of `el` up to (container, offset).
+  // When container is an element node, offset is a child index.
+  // When container is a text node, offset is a character index.
+  // When container is a BR node, offset is ignored (cursor is on the BR itself).
+  function _count(el, targetNode, targetOffset) {
+    let count = 0;
+    let found = false;
+
+    function walk(node) {
+      if (found) return;
+
+      if (node === targetNode) {
+        // We've reached the target container.
+        if (node.nodeType === Node.TEXT_NODE) {
+          // offset is a character index within this text node.
+          count += targetOffset;
+        } else if (node.nodeName === 'BR') {
+          // Cursor is on the BR itself — count nothing extra;
+          // the BR's newline character is at `count` right now.
+        } else {
+          // Element node: offset is a child index.
+          // Count characters only through the first `targetOffset` children.
+          let i = 0;
+          for (const child of node.childNodes) {
+            if (i >= targetOffset) break;
+            count += _countAll(child);
+            i++;
+          }
+        }
+        found = true;
+        return;
+      }
+
+      // Not the target — count this node's content and keep walking.
+      if (node.nodeType === Node.TEXT_NODE) {
+        count += node.textContent.length;
+      } else if (node.nodeName === 'BR') {
+        count += 1;
+      } else {
+        for (const child of node.childNodes) {
+          walk(child);
+          if (found) return;
+        }
+      }
+    }
+
+    walk(el);
+    return count;
+  }
+
+  // Count ALL plain-text characters in a subtree.
+  function _countAll(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent.length;
+    if (node.nodeName === 'BR') return 1;
+    let n = 0;
+    for (const child of node.childNodes) n += _countAll(child);
+    return n;
+  }
+
   function getOffset(el) {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return { start: 0, end: 0 };
     const range = sel.getRangeAt(0);
-
-    function countToNode(targetNode, targetOffset) {
-      let count = 0;
-      let found = false;
-      function walk(node) {
-        if (found) return;
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (node === targetNode) {
-            count += targetOffset;
-            found = true;
-          } else {
-            count += node.textContent.length;
-          }
-        } else if (node.nodeName === 'BR') {
-          if (node === targetNode) {
-            found = true;
-          } else {
-            count += 1;
-          }
-        } else {
-          for (const child of node.childNodes) {
-            walk(child);
-            if (found) return;
-          }
-          if (node === targetNode) {
-            found = true;
-          }
-        }
-      }
-      walk(el);
-      return count;
-    }
-
-    const start = countToNode(range.startContainer, range.startOffset);
-    const end   = countToNode(range.endContainer,   range.endOffset);
+    const start = _count(el, range.startContainer, range.startOffset);
+    const end   = _count(el, range.endContainer,   range.endOffset);
     return { start, end };
   }
 
@@ -49,29 +75,7 @@ const Caret = (() => {
     const sel = window.getSelection();
     if (!sel) return;
 
-    // Walk the editor DOM and find the DOM node+offset corresponding to
-    // character position `target` in the plain text.
-    //
-    // Key insight: the editor innerHTML uses <br> for newlines.
-    // A <br> at plain-text position P means:
-    //   - characters 0..P-1 come before it
-    //   - character P is the newline itself (the <br>)
-    //   - character P+1 is the start of the next line
-    //
-    // To place the cursor at position T:
-    //   - If T lands inside a text node: standard node+charOffset
-    //   - If T lands exactly AT a <br> (T === brPosition): place before the <br>
-    //     using Range.setStartBefore(brNode) — this is "end of previous line"
-    //   - If T lands one past a <br> (T === brPosition+1): place after the <br>
-    //     — i.e. at the start of the next line. Anchor to the next sibling.
-    //     If next sibling is text: offset 0 of that text node.
-    //     If next sibling is another element (BR, span): parent + indexOf(next).
-    //     If no next sibling: parent + childCount.
-    //
-    // The "two adjacent BRs" problem: browser collapses parent+childIndex
-    // when the child at that index is a BR. Fix: always anchor to the next
-    // node itself (setStartBefore equivalent via parent+indexOf(next)).
-
+    // Find the DOM position (node, offset) for a plain-text character index.
     function findPosition(target) {
       let cc = 0;
       let result = null;
@@ -87,29 +91,25 @@ const Caret = (() => {
           cc += len;
 
         } else if (node.nodeName === 'BR') {
-          // This BR occupies plain-text position cc.
+          // This BR occupies plain-text position cc (the newline character).
           if (target === cc) {
-            // Cursor is AT the newline — place it just before this BR.
-            // Using parent + indexOf(br) puts cursor before the BR node.
+            // Cursor AT the newline: place before this BR.
             const idx = Array.prototype.indexOf.call(
               node.parentNode.childNodes, node);
             result = { node: node.parentNode, offset: idx };
           } else if (target === cc + 1) {
-            // Cursor is at the START of the line after this BR.
+            // Cursor at start of the line after this BR.
             const next = node.nextSibling;
             if (!next) {
-              // BR is the last node — end of document.
+              // BR is last child — end of document.
               const idx = Array.prototype.indexOf.call(
                 node.parentNode.childNodes, node) + 1;
               result = { node: node.parentNode, offset: idx };
             } else if (next.nodeType === Node.TEXT_NODE) {
-              // Next content is text — anchor at character 0 of that node.
               result = { node: next, offset: 0 };
             } else {
-              // Next sibling is an element (span, another BR, etc.).
-              // Point to parent at the index OF the next sibling.
-              // This is equivalent to setStartBefore(next) and the browser
-              // won't collapse it because we're referencing next's position.
+              // Next sibling is an element (another BR, span, etc.).
+              // Use parent + indexOf(next) — equivalent to setStartBefore(next).
               const idx = Array.prototype.indexOf.call(
                 node.parentNode.childNodes, next);
               result = { node: node.parentNode, offset: idx };
@@ -118,7 +118,6 @@ const Caret = (() => {
           cc += 1;
 
         } else {
-          // Element node (span etc.) — recurse into children.
           for (const child of node.childNodes) {
             walk(child);
             if (result) return;
@@ -127,8 +126,6 @@ const Caret = (() => {
       }
 
       walk(el);
-
-      // Fallback: end of document.
       if (!result) result = { node: el, offset: el.childNodes.length };
       return result;
     }
@@ -143,10 +140,9 @@ const Caret = (() => {
       sel.removeAllRanges();
       sel.addRange(r);
     } catch (ex) {
-      // Log so we can see what's actually failing instead of silently eating it
       console.error('[Caret.setOffset] Range exception:', ex.message,
-        '| start=', start, 'node=', s.node, 'offset=', s.offset,
-        '| end=', end, 'node=', e.node, 'offset=', e.offset);
+        '| start=', start, 's.node=', s.node, 's.offset=', s.offset,
+        '| end=', end, 'e.node=', e.node, 'e.offset=', e.offset);
     }
   }
 
