@@ -187,5 +187,5 @@
     write('#7af7b8', '[keyup]', `"${e.key}"  caret=${getCaret(editorEl)}`);
   }, true);
 
-  write('#7c6af7', '[logger]', 'Deep logger v2 active. Now press Enter in the editor.');
+  write('#7c6af7', '[logger]', 'Deep logger v3 active. Now press Enter in the editor.');
 })();
