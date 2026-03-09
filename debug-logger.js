@@ -26,7 +26,7 @@
 
   panel.innerHTML = `
     <div style="display:flex;align-items:center;padding:6px 10px;border-bottom:1px solid #2a2a38;gap:8px;flex-shrink:0">
-      <span style="color:#7c6af7;font-weight:700;flex:1">🔬 CS·IDE Deep Logger v2</span>
+      <span style="color:#7c6af7;font-weight:700;flex:1">🔬 CS·IDE Deep Logger v3</span>
       <label style="font-size:9px;color:#5a5a7a;display:flex;align-items:center;gap:3px">
         <input type="checkbox" id="dbg2-stacks" checked> Stacks
       </label>
