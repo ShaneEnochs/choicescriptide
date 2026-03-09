@@ -34,3 +34,14 @@
 #editor .hl-cmd:hover {
   text-decoration: underline dotted;
 }
+
+/* Ensure the editor always has at least one line-height of space after the
+   last line. This replaces the sentinel <br> that was previously appended by
+   highlight.js — using ::after avoids the BR being counted as a real \n by
+   getPlainText, which caused content to grow by one newline on every refresh. */
+#editor::after {
+  content: '\200b';   /* zero-width space — gives the pseudo-element real height */
+  display: block;
+  height: 1.75em;     /* matches the editor line-height */
+  pointer-events: none;
+}
